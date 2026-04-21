@@ -802,6 +802,11 @@ body {
         </div>
     </div>
 
+    <!-- OBS STYLE DROPDOWNS -->
+<div id="sceneDropdown" class="obs-dropdown"></div>
+<div id="transitionDropdown" class="obs-dropdown"></div>
+<div id="settingsPanel" class="obs-panel"></div>
+
     <script>
         // State management
         let screenStream = null;
@@ -1186,9 +1191,64 @@ body {
         transportRecord.addEventListener('click', () => recordBtn.click());
         transportPause.addEventListener('click', togglePause);
         transportStop.addEventListener('click', stopRecording);
+        document.querySelectorAll('.preview-item').forEach(item => {
+    item.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+
+        toggleDropdown("sceneDropdown", e.pageX, e.pageY, [
+            { label: "Rename Scene", action: () => alert("Rename (future feature)") },
+            { label: "Duplicate Scene", action: () => alert("Duplicate") },
+            { label: "Delete Scene", action: () => alert("Delete") },
+            { label: "Scene Settings", action: () => alert("Settings panel") }
+        
+
+        document.querySelectorAll('.transition-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        const rect = btn.getBoundingClientRect();
+
+        toggleDropdown("transitionDropdown", rect.left, rect.bottom, [
+            { label: "Cut (instant)", action: () => console.log("Cut") },
+            { label: "Fade (500ms)", action: () => console.log("Fade") },
+            { label: "Slide", action: () => console.log("Slide") },
+            { label: "Wipe", action: () => console.log("Wipe") }
+
+
+        document.getElementById("transportSettings").addEventListener("click", (e) => {
+    const rect = e.target.getBoundingClientRect();
+
+    const panel = document.getElementById("settingsPanel");
+
+    panel.style.left = rect.left + "px";
+    panel.style.top = rect.bottom + "px";
+    panel.style.display = panel.style.display === "block" ? "none" : "block";
+
+    panel.innerHTML = `
+        <div class="obs-label">Settings</div>
+        <button onclick="alert('Output settings')">Output</button>
+        <button onclick="alert('Audio settings')">Audio</button>
+        <button onclick="alert('Video settings')">Video</button>
+        <button onclick="alert('Hotkeys')">Hotkeys</button>
+    `;
+});
 
         // Initialize
         setupStreams();
+
+        function toggleDropdown(id, x, y, items) {
+    const el = document.getElementById(id);
+    
+    el.innerHTML = "";
+    el.style.left = x + "px";
+    el.style.top = y + "px";
+    el.style.display = el.style.display === "flex" ? "none" : "flex";
+
+    items.forEach(item => {
+        const btn = document.createElement("button");
+        btn.textContent = item.label;
+        btn.onclick = item.action;
+        el.appendChild(btn);
+    });
+}
     </script>
 </body>
 </html>
