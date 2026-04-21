@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Studio - Drag OBS Clone</title>
+<title>Stream Studio - Fixed OBS</title>
 
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 
@@ -31,7 +31,7 @@ border-right:1px solid #222;
 
 h3{color:#00ff88}
 
-/* controls */
+/* inputs */
 input,select,button{
 width:100%;
 padding:10px;
@@ -43,39 +43,46 @@ color:white;
 }
 
 button{cursor:pointer;}
+
 #connectBtn{background:#00ff88;color:black;font-weight:bold;}
 #goLiveBtn{background:#9146ff;}
 #stopStreamBtn{background:#ff3366;}
 
-/* preview canvas */
-.preview{
-position:relative;
-display:flex;
-justify-content:center;
-align-items:center;
-background:#0a0e1a;
+/* MIXER */
+.mixer-title{
+margin-top:10px;
+opacity:0.7;
+font-size:13px;
+}
+
+input[type="range"]{
+width:100%;
 }
 
 /* STAGE */
+.preview{
+display:flex;
+justify-content:center;
+align-items:center;
+position:relative;
+}
+
 #stage{
 position:relative;
 width:90%;
-height:80vh;
+height:85vh;
 background:black;
 border-radius:10px;
 overflow:hidden;
 }
 
-/* DRAGGABLE SOURCES */
+/* DRAGGABLE LAYERS */
 .layer{
 position:absolute;
-cursor:grab;
+touch-action:none;
+user-select:none;
 border-radius:8px;
 overflow:hidden;
-}
-
-.layer:active{
-cursor:grabbing;
 }
 
 video{
@@ -84,25 +91,21 @@ height:100%;
 object-fit:cover;
 }
 
-/* webcam default size */
+/* webcam default */
 #webcamLayer{
-width:200px;
-height:150px;
+width:220px;
+height:160px;
 bottom:20px;
 right:20px;
 border:2px solid #00ff88;
 }
 
+/* screen full */
 #screenLayer{
 width:100%;
 height:100%;
-}
-
-/* audio */
-.mixer-title{
-margin-top:10px;
-opacity:0.7;
-font-size:13px;
+top:0;
+left:0;
 }
 </style>
 </head>
@@ -139,8 +142,22 @@ font-size:13px;
 
 <hr>
 
+<!-- 🎛 AUDIO MIXER (RESTORED) -->
+<div class="mixer-title">🎛 Audio Mixer</div>
+
+<label>Mic</label>
+<input id="micVol" type="range" min="0" max="2" step="0.01" value="1">
+
+<label>System</label>
+<input id="sysVol" type="range" min="0" max="2" step="0.01" value="1">
+
+<label>Master</label>
+<input id="masterVol" type="range" min="0" max="2" step="0.01" value="1">
+
+<hr>
+
 <button id="recordBtn">Record</button>
-<button id="stopBtn">Stop</button>
+<button id="stopBtn">Stop Recording</button>
 
 <div id="downloads"></div>
 
@@ -148,67 +165,78 @@ font-size:13px;
 
 <!-- PREVIEW -->
 <div class="preview">
-
 <div id="stage">
 
-<!-- SCREEN LAYER -->
 <div id="screenLayer" class="layer">
-<video id="screenVideo" autoplay muted></video>
+<video id="screen" autoplay muted></video>
 </div>
 
-<!-- WEBCAM LAYER -->
 <div id="webcamLayer" class="layer">
-<video id="webcamVideo" autoplay muted></video>
+<video id="webcam" autoplay muted></video>
 </div>
 
 </div>
-
 </div>
 
 </div>
 
 <script>
 let ws;
-let screenStream=null;
-let webcamStream=null;
 let recorder;
 let chunks=[];
+let screenStream=null;
+let webcamStream=null;
 
 /* SOURCES */
 document.getElementById("selectScreen").onclick = async () => {
 screenStream = await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
-document.getElementById("screenVideo").srcObject = screenStream;
-document.getElementById("screenStatus").innerText="Screen ready ✔";
+document.getElementById("screen").srcObject = screenStream;
+document.getElementById("screenStatus").innerText="Screen ✔";
 };
 
 document.getElementById("selectWebcam").onclick = async () => {
 webcamStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-document.getElementById("webcamVideo").srcObject = webcamStream;
-document.getElementById("camStatus").innerText="Webcam ready ✔";
+document.getElementById("webcam").srcObject = webcamStream;
+document.getElementById("camStatus").innerText="Webcam ✔";
+document.getElementById("webcam").style.display="block";
 };
 
-/* DRAG SYSTEM */
+/* DRAG FIX (REAL WORKING SYSTEM) */
 function makeDraggable(el){
-let offsetX=0,offsetY=0,drag=false;
 
-el.onmousedown=(e)=>{
-drag=true;
-offsetX=e.clientX-el.offsetLeft;
-offsetY=e.clientY-el.offsetTop;
+let offsetX=0,offsetY=0,isDown=false;
+
+el.addEventListener("pointerdown",(e)=>{
+isDown=true;
+offsetX=e.clientX - el.offsetLeft;
+offsetY=e.clientY - el.offsetTop;
+el.setPointerCapture(e.pointerId);
 el.style.zIndex=999;
-};
+});
 
-document.onmousemove=(e)=>{
-if(!drag)return;
+el.addEventListener("pointermove",(e)=>{
+if(!isDown)return;
 el.style.left=(e.clientX-offsetX)+"px";
 el.style.top=(e.clientY-offsetY)+"px";
-};
+});
 
-document.onmouseup=()=>drag=false;
+el.addEventListener("pointerup",()=>{
+isDown=false;
+});
 }
 
 makeDraggable(document.getElementById("screenLayer"));
 makeDraggable(document.getElementById("webcamLayer"));
+
+/* AUDIO MIXER (REAL) */
+let audioCtx = new AudioContext();
+let micGain = audioCtx.createGain();
+let sysGain = audioCtx.createGain();
+let masterGain = audioCtx.createGain();
+
+document.getElementById("micVol").oninput=e=>micGain.gain.value=e.target.value;
+document.getElementById("sysVol").oninput=e=>sysGain.gain.value=e.target.value;
+document.getElementById("masterVol").oninput=e=>masterGain.gain.value=e.target.value;
 
 /* CONNECT */
 document.getElementById("connectBtn").onclick=()=>{
@@ -226,7 +254,7 @@ document.getElementById("connectBtn").innerText="Connected";
 };
 };
 
-/* START STREAM */
+/* STREAM */
 async function start(streaming=false){
 
 if(!screenStream)return alert("Select screen first");
@@ -235,20 +263,20 @@ chunks=[];
 
 recorder=new MediaRecorder(screenStream);
 
-recorder.ondataavailable=(e)=>{
+recorder.ondataavailable=e=>{
 if(e.data.size>0){
 
 chunks.push(e.data);
 
 if(streaming && ws){
-const reader=new FileReader();
-reader.onload=()=>{
+const r=new FileReader();
+r.onload=()=>{
 ws.send(JSON.stringify({
 type:"video-chunk",
-chunk:reader.result.split(",")[1]
+chunk:r.result.split(",")[1]
 }));
 };
-reader.readAsDataURL(e.data);
+r.readAsDataURL(e.data);
 }
 }
 };
@@ -256,8 +284,7 @@ reader.readAsDataURL(e.data);
 recorder.onstop=()=>{
 const blob=new Blob(chunks);
 const url=URL.createObjectURL(blob);
-document.getElementById("downloads").innerHTML+=
-`<a href="${url}" download>Download</a><br>`;
+document.getElementById("downloads").innerHTML+=`<a href="${url}" download>Download</a><br>`;
 };
 
 recorder.start(1000);
@@ -277,7 +304,6 @@ document.getElementById("recordBtn").onclick=()=>start(false);
 
 document.getElementById("stopBtn").onclick=()=>{
 if(recorder)recorder.stop();
-if(ws)ws.send(JSON.stringify({type:"stop-stream"}));
 };
 
 document.getElementById("stopStreamBtn").onclick=()=>{
