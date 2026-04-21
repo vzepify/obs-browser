@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Studio - OBS Clone Pro</title>
+<title>Stream Studio - OBS Clone Pro FIXED</title>
 
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 
@@ -31,7 +31,6 @@ border-right:1px solid #222;
 
 h3{color:#00ff88}
 
-/* UI */
 input,select,button{
 width:100%;
 padding:10px;
@@ -84,7 +83,6 @@ height:100%;
 object-fit:cover;
 }
 
-/* resize handles */
 .handle{
 width:10px;
 height:10px;
@@ -95,43 +93,13 @@ bottom:0;
 cursor:nwse-resize;
 }
 
-/* context menu */
-#menu{
-position:absolute;
-display:none;
-background:#1e2538;
-border:1px solid #333;
-padding:10px;
-border-radius:8px;
-z-index:9999;
-width:180px;
-}
-
-/* right panel */
+/* RIGHT PANEL */
 .rightPanel{
 background:#151b2e;
 padding:10px;
 border-left:1px solid #222;
-overflow-y:auto;
 }
 
-.sceneBtn{
-background:#0f1424;
-margin:5px 0;
-}
-
-/* mixer */
-.meter{
-height:6px;
-background:#333;
-margin:4px 0;
-position:relative;
-}
-.bar{
-height:100%;
-background:#00ff88;
-width:50%;
-}
 </style>
 </head>
 
@@ -142,7 +110,7 @@ width:50%;
 <!-- LEFT -->
 <div class="sidebar">
 
-<h3>STREAM.STUDIO PRO</h3>
+<h3>STREAM.STUDIO FIXED</h3>
 
 <button onclick="addScene()">+ Scene</button>
 <div id="sceneList"></div>
@@ -153,7 +121,6 @@ width:50%;
 <button onclick="addLayer('webcam')">Webcam</button>
 <button onclick="addLayer('text')">Text</button>
 <button onclick="addLayer('image')">Image</button>
-<button onclick="addLayer('browser')">Browser</button>
 
 <hr>
 
@@ -164,168 +131,152 @@ width:50%;
 </select>
 
 <input id="rtmpUrl" placeholder="RTMP URL">
-<input id="streamKey" placeholder="Key">
+<input id="streamKey" placeholder="Stream Key">
 
 <button id="connectBtn">Connect</button>
 <button id="goLiveBtn">Go Live</button>
-<button id="stopStreamBtn">Stop</button>
-
-<hr>
-
-<h4>Save / Load</h4>
-<button onclick="saveScene()">Save Scene</button>
-<button onclick="loadScene()">Load Scene</button>
+<button id="stopStreamBtn">Stop Stream</button>
 
 </div>
 
 <!-- STAGE -->
 <div class="preview">
 <div id="stage"></div>
-
-<div id="menu">
-<button onclick="setType('screen')">Screen</button>
-<button onclick="setType('webcam')">Webcam</button>
-<button onclick="setType('text')">Text</button>
-<button onclick="setType('browser')">Browser</button>
-<button onclick="removeLayer()">Delete</button>
-</div>
-
 </div>
 
 <!-- RIGHT -->
 <div class="rightPanel">
-
-<h4>Audio Mixer</h4>
-
-Mic
-<div class="meter"><div class="bar" id="micBar"></div></div>
-
-System
-<div class="meter"><div class="bar" id="sysBar"></div></div>
-
-Master
-<div class="meter"><div class="bar" id="masterBar"></div></div>
-
+<h4>Status</h4>
+<div id="status">Not connected</div>
 </div>
 
 </div>
 
 <script>
 
-let stage=document.getElementById("stage");
-let menu=document.getElementById("menu");
+let ws = null;
+let currentScene = 0;
+let scenes = [[]];
 
-let selected=null;
-let scenes=[];
-let currentScene=0;
+const stage = document.getElementById("stage");
+const status = document.getElementById("status");
 
-let streams={};
+const rtmpUrl = document.getElementById("rtmpUrl");
+const streamKey = document.getElementById("streamKey");
 
-/* SCENES */
+/* =========================
+   FIXED PLATFORM AUTOFILL
+========================= */
+document.getElementById("platform").onchange = () => {
+const v = document.getElementById("platform").value;
+
+if(v === "twitch"){
+rtmpUrl.value = "rtmp://live.twitch.tv/app/";
+}
+else if(v === "youtube"){
+rtmpUrl.value = "rtmp://a.rtmp.youtube.com/live2/";
+}
+};
+
+/* =========================
+   SCENES
+========================= */
 function addScene(){
 scenes.push([]);
 renderScenes();
 }
 
 function renderScenes(){
-document.getElementById("sceneList").innerHTML=
-scenes.map((s,i)=>
-`<button class="sceneBtn" onclick="switchScene(${i})">Scene ${i+1}</button>`
+document.getElementById("sceneList").innerHTML =
+scenes.map((_,i)=>
+`<button onclick="switchScene(${i})">Scene ${i+1}</button>`
 ).join("");
 }
 
 function switchScene(i){
-currentScene=i;
-stage.innerHTML="";
-scenes[i].forEach(l=>stage.appendChild(l));
+currentScene = i;
+stage.innerHTML = "";
+scenes[i].forEach(l => stage.appendChild(l));
 }
 
-/* LAYERS */
+/* =========================
+   LAYERS
+========================= */
 function addLayer(type){
 
-let el=document.createElement("div");
-el.className="layer";
-el.dataset.type=type;
+const el = document.createElement("div");
+el.className = "layer";
 
-if(type==="screen"){
-el.innerHTML="<video autoplay muted></video>";
-el.style.width="100%";
-el.style.height="100%";
+if(type === "screen"){
+el.innerHTML = "<video autoplay muted></video>";
+el.style.width = "100%";
+el.style.height = "100%";
 startScreen(el);
+}
 
-}else if(type==="webcam"){
-el.innerHTML="<video autoplay muted></video>";
-el.style.width="200px";
-el.style.height="150px";
-startCam(el);
+if(type === "webcam"){
+el.innerHTML = "<video autoplay muted></video>";
+el.style.width = "220px";
+el.style.height = "160px";
+startWebcam(el);
+}
 
-}else if(type==="text"){
-el.innerHTML="<div contenteditable style='color:white;padding:10px'>Text</div>";
-el.style.width="200px";
-el.style.height="80px";
+if(type === "text"){
+el.innerHTML = "<div contenteditable style='padding:10px;color:white'>Text</div>";
+el.style.width = "200px";
+el.style.height = "80px";
+}
 
-}else if(type==="image"){
-el.innerHTML="<img src='https://placekitten.com/300/200'>";
-el.style.width="200px";
-el.style.height="150px";
-
-}else if(type==="browser"){
-el.innerHTML="<iframe src='https://youtube.com'></iframe>";
-el.style.width="300px";
-el.style.height="200px";
+if(type === "image"){
+el.innerHTML = "<img src='https://placekitten.com/300/200'>";
+el.style.width = "200px";
+el.style.height = "150px";
 }
 
 makeDraggable(el);
 makeResizable(el);
 
-el.oncontextmenu=(e)=>{
-e.preventDefault();
-selected=el;
-menu.style.display="block";
-menu.style.left=e.pageX+"px";
-menu.style.top=e.pageY+"px";
-};
-
 stage.appendChild(el);
-scenes[currentScene]=scenes[currentScene]||[];
 scenes[currentScene].push(el);
 }
 
-/* SOURCES */
+/* =========================
+   SOURCES
+========================= */
 async function startScreen(el){
-let stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
-el.querySelector("video").srcObject=stream;
+const stream = await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
+el.querySelector("video").srcObject = stream;
 }
 
-async function startCam(el){
-let stream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-el.querySelector("video").srcObject=stream;
+async function startWebcam(el){
+const stream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+el.querySelector("video").srcObject = stream;
 }
 
-/* DRAG */
+/* =========================
+   DRAG + RESIZE
+========================= */
 function makeDraggable(el){
 let x=0,y=0,down=false;
 
-el.addEventListener("pointerdown",(e)=>{
+el.onpointerdown = (e)=>{
 down=true;
-x=e.clientX-el.offsetLeft;
-y=e.clientY-el.offsetTop;
+x=e.clientX - el.offsetLeft;
+y=e.clientY - el.offsetTop;
 el.setPointerCapture(e.pointerId);
-el.style.zIndex=999;
-});
+};
 
-el.addEventListener("pointermove",(e)=>{
+el.onpointermove = (e)=>{
 if(!down)return;
-el.style.left=(e.clientX-x)+"px";
-el.style.top=(e.clientY-y)+"px";
-});
+el.style.left = (e.clientX - x) + "px";
+el.style.top = (e.clientY - y) + "px";
+};
 
-el.addEventListener("pointerup",()=>down=false);
+el.onpointerup = ()=>down=false;
 }
 
-/* RESIZE */
 function makeResizable(el){
-let h=document.createElement("div");
+const h=document.createElement("div");
 h.className="handle";
 el.appendChild(h);
 
@@ -338,52 +289,55 @@ e.stopPropagation();
 
 window.onpointermove=(e)=>{
 if(!resizing)return;
-el.style.width=e.clientX-el.offsetLeft+"px";
-el.style.height=e.clientY-el.offsetTop+"px";
+el.style.width = (e.clientX - el.offsetLeft) + "px";
+el.style.height = (e.clientY - el.offsetTop) + "px";
 };
 
 window.onpointerup=()=>resizing=false;
 }
 
-/* MENU ACTIONS */
-function setType(type){
-if(!selected)return;
-selected.dataset.type=type;
-menu.style.display="none";
-}
+/* =========================
+   CONNECT FIXED
+========================= */
+document.getElementById("connectBtn").onclick = () => {
 
-function removeLayer(){
-if(selected){
-selected.remove();
-selected=null;
-}
-menu.style.display="none";
-}
+const proto = location.protocol === "https:" ? "wss" : "ws";
 
-/* SAVE / LOAD */
-function saveScene(){
-localStorage.setItem("scene",stage.innerHTML);
-alert("Saved");
-}
+ws = new WebSocket(`${proto}://${location.host}`);
 
-function loadScene(){
-stage.innerHTML=localStorage.getItem("scene")||"";
-}
-
-/* CONNECT */
-document.getElementById("connectBtn").onclick=()=>{
-let ws=new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
-
-ws.onopen=()=>{
+ws.onopen = () => {
 ws.send(JSON.stringify({
 type:"configure",
-rtmpUrl:rtmpUrl.value,
-streamKey:streamKey.value
+rtmpUrl: rtmpUrl.value,
+streamKey: streamKey.value
 }));
+
+status.innerText = "Connected ✔";
+};
+
+ws.onclose = () => {
+status.innerText = "Disconnected";
+};
+
+ws.onerror = () => {
+status.innerText = "WebSocket error";
 };
 };
 
-window.onclick=()=>menu.style.display="none";
+/* =========================
+   STREAM CONTROL (FIXED)
+========================= */
+document.getElementById("goLiveBtn").onclick = () => {
+if(!ws || ws.readyState !== 1) return alert("Connect first");
+
+ws.send(JSON.stringify({type:"start-stream"}));
+status.innerText = "LIVE 🔴";
+};
+
+document.getElementById("stopStreamBtn").onclick = () => {
+if(ws) ws.send(JSON.stringify({type:"stop-stream"}));
+status.innerText = "Stopped ⏹";
+};
 
 </script>
 
