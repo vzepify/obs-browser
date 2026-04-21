@@ -121,13 +121,21 @@ wss.on('connection', (ws) => {
 
       /* STOP */
       if (data.type === 'stop-stream') {
-        if (ffmpeg) {
-          console.log('⏹️ Stopping stream');
-          ffmpeg.stdin.end();
-          ffmpeg.kill('SIGINT');
-          ffmpeg = null;
-        }
-      }
+  if (ffmpeg) {
+    console.log('⏹️ Stopping stream');
+
+    try {
+      ffmpeg.stdin.end();
+    } catch (e) {}
+
+    ffmpeg.kill('SIGKILL'); // stronger than SIGINT
+    ffmpeg = null;
+
+    ws.send(JSON.stringify({
+      type: "stopped"
+    }));
+  }
+}
 
     } catch (err) {
       console.error('Message error:', err);
