@@ -91,7 +91,7 @@ height:100%;
 object-fit:cover;
 }
 
-/* webcam default */
+/* webcam */
 #webcamLayer{
 width:220px;
 height:160px;
@@ -100,7 +100,7 @@ right:20px;
 border:2px solid #00ff88;
 }
 
-/* screen full */
+/* screen */
 #screenLayer{
 width:100%;
 height:100%;
@@ -131,6 +131,7 @@ left:0;
 <option value="">Platform</option>
 <option value="twitch">Twitch</option>
 <option value="youtube">YouTube</option>
+<option value="custom">Custom</option>
 </select>
 
 <input id="rtmpUrl" placeholder="RTMP URL">
@@ -142,7 +143,6 @@ left:0;
 
 <hr>
 
-<!-- 🎛 AUDIO MIXER (RESTORED) -->
 <div class="mixer-title">🎛 Audio Mixer</div>
 
 <label>Mic</label>
@@ -187,6 +187,24 @@ let chunks=[];
 let screenStream=null;
 let webcamStream=null;
 
+/* ELEMENTS */
+const platform = document.getElementById("platform");
+const rtmpUrl = document.getElementById("rtmpUrl");
+const streamKey = document.getElementById("streamKey");
+
+/* FIXED PLATFORM AUTOFILL */
+platform.onchange = () => {
+if(platform.value === "twitch"){
+rtmpUrl.value = "rtmp://live.twitch.tv/app/";
+}
+else if(platform.value === "youtube"){
+rtmpUrl.value = "rtmp://a.rtmp.youtube.com/live2/";
+}
+else if(platform.value === "custom"){
+rtmpUrl.value = "";
+}
+};
+
 /* SOURCES */
 document.getElementById("selectScreen").onclick = async () => {
 screenStream = await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
@@ -198,79 +216,68 @@ document.getElementById("selectWebcam").onclick = async () => {
 webcamStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
 document.getElementById("webcam").srcObject = webcamStream;
 document.getElementById("camStatus").innerText="Webcam ✔";
-document.getElementById("webcam").style.display="block";
 };
 
-/* DRAG FIX (REAL WORKING SYSTEM) */
+/* DRAG SYSTEM */
 function makeDraggable(el){
-
-let offsetX=0,offsetY=0,isDown=false;
+let x=0,y=0,down=false;
 
 el.addEventListener("pointerdown",(e)=>{
-isDown=true;
-offsetX=e.clientX - el.offsetLeft;
-offsetY=e.clientY - el.offsetTop;
+down=true;
+x=e.clientX - el.offsetLeft;
+y=e.clientY - el.offsetTop;
 el.setPointerCapture(e.pointerId);
-el.style.zIndex=999;
 });
 
 el.addEventListener("pointermove",(e)=>{
-if(!isDown)return;
-el.style.left=(e.clientX-offsetX)+"px";
-el.style.top=(e.clientY-offsetY)+"px";
+if(!down)return;
+el.style.left=(e.clientX-x)+"px";
+el.style.top=(e.clientY-y)+"px";
 });
 
-el.addEventListener("pointerup",()=>{
-isDown=false;
-});
+el.addEventListener("pointerup",()=>down=false);
 }
 
 makeDraggable(document.getElementById("screenLayer"));
 makeDraggable(document.getElementById("webcamLayer"));
 
-/* AUDIO MIXER (REAL) */
-let audioCtx = new AudioContext();
-let micGain = audioCtx.createGain();
-let sysGain = audioCtx.createGain();
-let masterGain = audioCtx.createGain();
-
-document.getElementById("micVol").oninput=e=>micGain.gain.value=e.target.value;
-document.getElementById("sysVol").oninput=e=>sysGain.gain.value=e.target.value;
-document.getElementById("masterVol").oninput=e=>masterGain.gain.value=e.target.value;
-
 /* CONNECT */
-document.getElementById("connectBtn").onclick=()=>{
-const proto=location.protocol==="https:"?"wss":"ws";
-ws=new WebSocket(`${proto}://${location.host}`);
+document.getElementById("connectBtn").onclick = () => {
 
-ws.onopen=()=>{
+const proto = location.protocol === "https:" ? "wss" : "ws";
+ws = new WebSocket(`${proto}://${location.host}`);
+
+ws.onopen = () => {
 ws.send(JSON.stringify({
 type:"configure",
-rtmpUrl:rtmpUrl.value,
-streamKey:streamKey.value
+rtmpUrl: rtmpUrl.value,
+streamKey: streamKey.value
 }));
 
 document.getElementById("connectBtn").innerText="Connected";
+};
+
+ws.onclose = () => {
+document.getElementById("connectBtn").innerText="Connect";
 };
 };
 
 /* STREAM */
 async function start(streaming=false){
 
-if(!screenStream)return alert("Select screen first");
+if(!screenStream) return alert("Select screen first");
 
 chunks=[];
 
-recorder=new MediaRecorder(screenStream);
+recorder = new MediaRecorder(screenStream);
 
-recorder.ondataavailable=e=>{
-if(e.data.size>0){
-
+recorder.ondataavailable = e => {
+if(e.data.size > 0){
 chunks.push(e.data);
 
 if(streaming && ws){
-const r=new FileReader();
-r.onload=()=>{
+const r = new FileReader();
+r.onload = () => {
 ws.send(JSON.stringify({
 type:"video-chunk",
 chunk:r.result.split(",")[1]
@@ -281,10 +288,11 @@ r.readAsDataURL(e.data);
 }
 };
 
-recorder.onstop=()=>{
-const blob=new Blob(chunks);
-const url=URL.createObjectURL(blob);
-document.getElementById("downloads").innerHTML+=`<a href="${url}" download>Download</a><br>`;
+recorder.onstop = () => {
+const blob = new Blob(chunks);
+const url = URL.createObjectURL(blob);
+document.getElementById("downloads").innerHTML +=
+`<a href="${url}" download>Download</a><br>`;
 };
 
 recorder.start(1000);
@@ -295,20 +303,20 @@ ws.send(JSON.stringify({type:"start-stream"}));
 }
 
 /* BUTTONS */
-document.getElementById("goLiveBtn").onclick=()=>{
-if(!ws)return alert("Connect first");
+document.getElementById("goLiveBtn").onclick = () => {
+if(!ws) return alert("Connect first");
 start(true);
 };
 
-document.getElementById("recordBtn").onclick=()=>start(false);
+document.getElementById("recordBtn").onclick = () => start(false);
 
-document.getElementById("stopBtn").onclick=()=>{
-if(recorder)recorder.stop();
+document.getElementById("stopBtn").onclick = () => {
+if(recorder) recorder.stop();
 };
 
-document.getElementById("stopStreamBtn").onclick=()=>{
-if(ws)ws.send(JSON.stringify({type:"stop-stream"}));
-if(recorder)recorder.stop();
+document.getElementById("stopStreamBtn").onclick = () => {
+if(ws) ws.send(JSON.stringify({type:"stop-stream"}));
+if(recorder) recorder.stop();
 };
 
 </script>
