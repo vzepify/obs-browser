@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Studio - OBS Properties</title>
+<title>Stream Studio - OBS Clone Pro</title>
 
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 
@@ -17,7 +17,7 @@ color:white;
 
 .app{
 display:grid;
-grid-template-columns:340px 1fr;
+grid-template-columns:340px 1fr 280px;
 height:100vh;
 }
 
@@ -31,6 +31,7 @@ border-right:1px solid #222;
 
 h3{color:#00ff88}
 
+/* UI */
 input,select,button{
 width:100%;
 padding:10px;
@@ -52,13 +53,13 @@ button{cursor:pointer;}
 display:flex;
 justify-content:center;
 align-items:center;
-position:relative;
+background:#0a0e1a;
 }
 
 #stage{
 position:relative;
-width:90%;
-height:85vh;
+width:95%;
+height:90vh;
 background:black;
 border-radius:10px;
 overflow:hidden;
@@ -67,35 +68,35 @@ overflow:hidden;
 /* LAYERS */
 .layer{
 position:absolute;
-touch-action:none;
-user-select:none;
 border-radius:8px;
 overflow:hidden;
 border:2px solid transparent;
+touch-action:none;
 }
 
 .layer.selected{
 border:2px solid #00ff88;
 }
 
-video{
+video,iframe,img{
 width:100%;
 height:100%;
 object-fit:cover;
 }
 
-.hidden{display:none !important;}
-
-/* webcam default */
-#webcamLayer{
-width:220px;
-height:160px;
-bottom:20px;
-right:20px;
+/* resize handles */
+.handle{
+width:10px;
+height:10px;
+background:#00ff88;
+position:absolute;
+right:0;
+bottom:0;
+cursor:nwse-resize;
 }
 
-/* RIGHT CLICK MENU */
-#contextMenu{
+/* context menu */
+#menu{
 position:absolute;
 display:none;
 background:#1e2538;
@@ -106,17 +107,30 @@ z-index:9999;
 width:180px;
 }
 
-#contextMenu button{
+/* right panel */
+.rightPanel{
+background:#151b2e;
+padding:10px;
+border-left:1px solid #222;
+overflow-y:auto;
+}
+
+.sceneBtn{
+background:#0f1424;
 margin:5px 0;
 }
 
-/* PROPERTIES PANEL */
-#properties{
-margin-top:10px;
-padding:10px;
-background:#0f1424;
-border-radius:8px;
-border:1px solid #222;
+/* mixer */
+.meter{
+height:6px;
+background:#333;
+margin:4px 0;
+position:relative;
+}
+.bar{
+height:100%;
+background:#00ff88;
+width:50%;
 }
 </style>
 </head>
@@ -125,18 +139,21 @@ border:1px solid #222;
 
 <div class="app">
 
-<!-- SIDEBAR -->
+<!-- LEFT -->
 <div class="sidebar">
 
-<h3>STREAM.STUDIO</h3>
+<h3>STREAM.STUDIO PRO</h3>
 
-<button onclick="addLayer('screen')">+ Screen Layer</button>
-<button onclick="addLayer('webcam')">+ Webcam Layer</button>
+<button onclick="addScene()">+ Scene</button>
+<div id="sceneList"></div>
 
-<div id="properties">
-<h4>Properties</h4>
-<div id="propContent">Right click a layer</div>
-</div>
+<hr>
+
+<button onclick="addLayer('screen')">Screen</button>
+<button onclick="addLayer('webcam')">Webcam</button>
+<button onclick="addLayer('text')">Text</button>
+<button onclick="addLayer('image')">Image</button>
+<button onclick="addLayer('browser')">Browser</button>
 
 <hr>
 
@@ -144,15 +161,20 @@ border:1px solid #222;
 <option value="">Platform</option>
 <option value="twitch">Twitch</option>
 <option value="youtube">YouTube</option>
-<option value="custom">Custom</option>
 </select>
 
 <input id="rtmpUrl" placeholder="RTMP URL">
-<input id="streamKey" placeholder="Stream Key">
+<input id="streamKey" placeholder="Key">
 
 <button id="connectBtn">Connect</button>
 <button id="goLiveBtn">Go Live</button>
-<button id="stopStreamBtn">Stop Stream</button>
+<button id="stopStreamBtn">Stop</button>
+
+<hr>
+
+<h4>Save / Load</h4>
+<button onclick="saveScene()">Save Scene</button>
+<button onclick="loadScene()">Load Scene</button>
 
 </div>
 
@@ -160,11 +182,29 @@ border:1px solid #222;
 <div class="preview">
 <div id="stage"></div>
 
-<div id="contextMenu">
-<button onclick="setSource('screen')">Use Screen</button>
-<button onclick="setSource('webcam')">Use Webcam</button>
-<button onclick="deleteLayer()">Delete</button>
+<div id="menu">
+<button onclick="setType('screen')">Screen</button>
+<button onclick="setType('webcam')">Webcam</button>
+<button onclick="setType('text')">Text</button>
+<button onclick="setType('browser')">Browser</button>
+<button onclick="removeLayer()">Delete</button>
 </div>
+
+</div>
+
+<!-- RIGHT -->
+<div class="rightPanel">
+
+<h4>Audio Mixer</h4>
+
+Mic
+<div class="meter"><div class="bar" id="micBar"></div></div>
+
+System
+<div class="meter"><div class="bar" id="sysBar"></div></div>
+
+Master
+<div class="meter"><div class="bar" id="masterBar"></div></div>
 
 </div>
 
@@ -172,20 +212,35 @@ border:1px solid #222;
 
 <script>
 
-let ws;
-let recorder;
-let chunks=[];
+let stage=document.getElementById("stage");
+let menu=document.getElementById("menu");
 
-let screenStream=null;
-let webcamStream=null;
+let selected=null;
+let scenes=[];
+let currentScene=0;
 
-let selectedLayer=null;
+let streams={};
+
+/* SCENES */
+function addScene(){
+scenes.push([]);
+renderScenes();
+}
+
+function renderScenes(){
+document.getElementById("sceneList").innerHTML=
+scenes.map((s,i)=>
+`<button class="sceneBtn" onclick="switchScene(${i})">Scene ${i+1}</button>`
+).join("");
+}
+
+function switchScene(i){
+currentScene=i;
+stage.innerHTML="";
+scenes[i].forEach(l=>stage.appendChild(l));
+}
 
 /* LAYERS */
-const stage=document.getElementById("stage");
-const menu=document.getElementById("contextMenu");
-
-/* CREATE LAYER */
 function addLayer(type){
 
 let el=document.createElement("div");
@@ -193,68 +248,58 @@ el.className="layer";
 el.dataset.type=type;
 
 if(type==="screen"){
-el.innerHTML='<video autoplay muted></video>';
+el.innerHTML="<video autoplay muted></video>";
 el.style.width="100%";
 el.style.height="100%";
+startScreen(el);
 
 }else if(type==="webcam"){
-el.innerHTML='<video autoplay muted></video>';
-el.style.width="220px";
-el.style.height="160px";
-el.style.bottom="20px";
-el.style.right="20px";
+el.innerHTML="<video autoplay muted></video>";
+el.style.width="200px";
+el.style.height="150px";
+startCam(el);
+
+}else if(type==="text"){
+el.innerHTML="<div contenteditable style='color:white;padding:10px'>Text</div>";
+el.style.width="200px";
+el.style.height="80px";
+
+}else if(type==="image"){
+el.innerHTML="<img src='https://placekitten.com/300/200'>";
+el.style.width="200px";
+el.style.height="150px";
+
+}else if(type==="browser"){
+el.innerHTML="<iframe src='https://youtube.com'></iframe>";
+el.style.width="300px";
+el.style.height="200px";
 }
 
-stage.appendChild(el);
 makeDraggable(el);
+makeResizable(el);
 
-/* RIGHT CLICK */
-el.addEventListener("contextmenu",(e)=>{
+el.oncontextmenu=(e)=>{
 e.preventDefault();
-selectedLayer=el;
+selected=el;
 menu.style.display="block";
 menu.style.left=e.pageX+"px";
 menu.style.top=e.pageY+"px";
-showProps(el);
-});
+};
 
-return el;
+stage.appendChild(el);
+scenes[currentScene]=scenes[currentScene]||[];
+scenes[currentScene].push(el);
 }
 
-/* PROPERTIES PANEL */
-function showProps(layer){
-document.getElementById("propContent").innerHTML=`
-<b>Type:</b> ${layer.dataset.type}<br><br>
-<button onclick="changeSource('${layer.dataset.type}')">Change Source</button>
-`;
+/* SOURCES */
+async function startScreen(el){
+let stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
+el.querySelector("video").srcObject=stream;
 }
 
-/* CHANGE SOURCE */
-async function changeSource(type){
-
-if(type==="screen"){
-screenStream = await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
-selectedLayer.querySelector("video").srcObject=screenStream;
-}
-
-if(type==="webcam"){
-webcamStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-selectedLayer.querySelector("video").srcObject=webcamStream;
-}
-}
-
-/* CONTEXT ACTIONS */
-function setSource(type){
-changeSource(type);
-menu.style.display="none";
-}
-
-function deleteLayer(){
-if(selectedLayer){
-selectedLayer.remove();
-selectedLayer=null;
-}
-menu.style.display="none";
+async function startCam(el){
+let stream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+el.querySelector("video").srcObject=stream;
 }
 
 /* DRAG */
@@ -263,10 +308,10 @@ let x=0,y=0,down=false;
 
 el.addEventListener("pointerdown",(e)=>{
 down=true;
-x=e.clientX - el.offsetLeft;
-y=e.clientY - el.offsetTop;
+x=e.clientX-el.offsetLeft;
+y=e.clientY-el.offsetTop;
 el.setPointerCapture(e.pointerId);
-el.classList.add("selected");
+el.style.zIndex=999;
 });
 
 el.addEventListener("pointermove",(e)=>{
@@ -275,25 +320,59 @@ el.style.left=(e.clientX-x)+"px";
 el.style.top=(e.clientY-y)+"px";
 });
 
-el.addEventListener("pointerup",()=>{
-down=false;
-});
+el.addEventListener("pointerup",()=>down=false);
 }
 
-/* PLATFORM FIX */
-document.getElementById("platform").onchange=()=>{
-if(platform.value==="twitch"){
-rtmpUrl.value="rtmp://live.twitch.tv/app/";
-}
-if(platform.value==="youtube"){
-rtmpUrl.value="rtmp://a.rtmp.youtube.com/live2/";
-}
+/* RESIZE */
+function makeResizable(el){
+let h=document.createElement("div");
+h.className="handle";
+el.appendChild(h);
+
+let resizing=false;
+
+h.onpointerdown=(e)=>{
+resizing=true;
+e.stopPropagation();
 };
+
+window.onpointermove=(e)=>{
+if(!resizing)return;
+el.style.width=e.clientX-el.offsetLeft+"px";
+el.style.height=e.clientY-el.offsetTop+"px";
+};
+
+window.onpointerup=()=>resizing=false;
+}
+
+/* MENU ACTIONS */
+function setType(type){
+if(!selected)return;
+selected.dataset.type=type;
+menu.style.display="none";
+}
+
+function removeLayer(){
+if(selected){
+selected.remove();
+selected=null;
+}
+menu.style.display="none";
+}
+
+/* SAVE / LOAD */
+function saveScene(){
+localStorage.setItem("scene",stage.innerHTML);
+alert("Saved");
+}
+
+function loadScene(){
+stage.innerHTML=localStorage.getItem("scene")||"";
+}
 
 /* CONNECT */
 document.getElementById("connectBtn").onclick=()=>{
-const proto=location.protocol==="https:"?"wss":"ws";
-ws=new WebSocket(`${proto}://${location.host}`);
+let ws=new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host);
 
 ws.onopen=()=>{
 ws.send(JSON.stringify({
@@ -304,12 +383,7 @@ streamKey:streamKey.value
 };
 };
 
-/* CLICK OUTSIDE CLOSE MENU */
-window.onclick=()=>{
-menu.style.display="none";
-selectedLayer?.classList.remove("selected");
-selectedLayer=null;
-};
+window.onclick=()=>menu.style.display="none";
 
 </script>
 
