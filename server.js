@@ -6,7 +6,51 @@ const { spawn } = require('child_process');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+document.getElementById("connectBtn").onclick = () => {
+  const keyVal = key.value.trim();
+  const urlVal = rtmp.value.trim();
+
+  if (!keyVal || !urlVal) {
+    alert("Enter stream key + RTMP URL first");
+    return;
+  }
+
+  // ✅ auto handle ws vs wss
+  const protocol = location.protocol === "https:" ? "wss://" : "ws://";
+  const wsUrl = protocol + location.host;
+
+  console.log("Connecting to:", wsUrl);
+
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    console.log("✅ WebSocket connected");
+
+    ws.send(JSON.stringify({
+      type: "configure",
+      rtmpUrl: urlVal,
+      streamKey: keyVal
+    }));
+
+    connected = true;
+    document.getElementById("connectBtn").textContent = "Connected ✅";
+  };
+
+  ws.onmessage = (msg) => {
+    console.log("📩 Server:", msg.data);
+  };
+
+  ws.onerror = (err) => {
+    console.error("❌ WebSocket error:", err);
+    alert("WebSocket connection failed (check server)");
+  };
+
+  ws.onclose = () => {
+    console.log("🔌 WebSocket closed");
+    connected = false;
+    document.getElementById("connectBtn").textContent = "Connect";
+  };
+};
 
 const PORT = process.env.PORT || 3000;
 
