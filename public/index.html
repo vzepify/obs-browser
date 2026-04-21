@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Studio - OBS Scenes</title>
+<title>Stream Studio - OBS Properties</title>
 
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 
@@ -31,7 +31,6 @@ border-right:1px solid #222;
 
 h3{color:#00ff88}
 
-/* buttons */
 input,select,button{
 width:100%;
 padding:10px;
@@ -47,32 +46,6 @@ button{cursor:pointer;}
 #connectBtn{background:#00ff88;color:black;font-weight:bold;}
 #goLiveBtn{background:#9146ff;}
 #stopStreamBtn{background:#ff3366;}
-
-/* SCENES */
-.sceneBox{
-background:#0f1424;
-padding:10px;
-border-radius:8px;
-margin-top:10px;
-border:1px solid #222;
-}
-
-.layerItem{
-display:flex;
-justify-content:space-between;
-align-items:center;
-background:#1e2538;
-padding:6px;
-border-radius:6px;
-margin-top:5px;
-font-size:13px;
-}
-
-.layerItem button{
-width:auto;
-padding:4px 8px;
-font-size:12px;
-}
 
 /* STAGE */
 .preview{
@@ -91,13 +64,18 @@ border-radius:10px;
 overflow:hidden;
 }
 
-/* DRAGGABLE */
+/* LAYERS */
 .layer{
 position:absolute;
 touch-action:none;
 user-select:none;
 border-radius:8px;
 overflow:hidden;
+border:2px solid transparent;
+}
+
+.layer.selected{
+border:2px solid #00ff88;
 }
 
 video{
@@ -106,25 +84,39 @@ height:100%;
 object-fit:cover;
 }
 
-.hidden{
-display:none !important;
-}
+.hidden{display:none !important;}
 
-/* webcam */
+/* webcam default */
 #webcamLayer{
 width:220px;
 height:160px;
 bottom:20px;
 right:20px;
-border:2px solid #00ff88;
 }
 
-/* screen */
-#screenLayer{
-width:100%;
-height:100%;
-top:0;
-left:0;
+/* RIGHT CLICK MENU */
+#contextMenu{
+position:absolute;
+display:none;
+background:#1e2538;
+border:1px solid #333;
+padding:10px;
+border-radius:8px;
+z-index:9999;
+width:180px;
+}
+
+#contextMenu button{
+margin:5px 0;
+}
+
+/* PROPERTIES PANEL */
+#properties{
+margin-top:10px;
+padding:10px;
+background:#0f1424;
+border-radius:8px;
+border:1px solid #222;
 }
 </style>
 </head>
@@ -141,18 +133,9 @@ left:0;
 <button onclick="addLayer('screen')">+ Screen Layer</button>
 <button onclick="addLayer('webcam')">+ Webcam Layer</button>
 
-<hr>
-
-<div class="sceneBox">
-<h4>Scenes</h4>
-<button onclick="switchScene(1)">Scene 1</button>
-<button onclick="switchScene(2)">Scene 2</button>
-<button onclick="switchScene(3)">Scene 3</button>
-</div>
-
-<div class="sceneBox">
-<h4>Layers</h4>
-<div id="layerList"></div>
+<div id="properties">
+<h4>Properties</h4>
+<div id="propContent">Right click a layer</div>
 </div>
 
 <hr>
@@ -176,6 +159,13 @@ left:0;
 <!-- STAGE -->
 <div class="preview">
 <div id="stage"></div>
+
+<div id="contextMenu">
+<button onclick="setSource('screen')">Use Screen</button>
+<button onclick="setSource('webcam')">Use Webcam</button>
+<button onclick="deleteLayer()">Delete</button>
+</div>
+
 </div>
 
 </div>
@@ -189,85 +179,82 @@ let chunks=[];
 let screenStream=null;
 let webcamStream=null;
 
-let currentScene = 1;
+let selectedLayer=null;
 
-const stage = document.getElementById("stage");
-const layerList = document.getElementById("layerList");
+/* LAYERS */
+const stage=document.getElementById("stage");
+const menu=document.getElementById("contextMenu");
 
-const layers = {}; 
-const scenes = {
-  1: [],
-  2: [],
-  3: []
-};
-
-/* ADD LAYERS */
+/* CREATE LAYER */
 function addLayer(type){
 
-let el = document.createElement("div");
+let el=document.createElement("div");
 el.className="layer";
 el.dataset.type=type;
 
 if(type==="screen"){
-el.id="screenLayer";
+el.innerHTML='<video autoplay muted></video>';
 el.style.width="100%";
 el.style.height="100%";
-el.innerHTML='<video id="screen" autoplay muted></video>';
 
 }else if(type==="webcam"){
-el.id="webcamLayer";
+el.innerHTML='<video autoplay muted></video>';
 el.style.width="220px";
 el.style.height="160px";
 el.style.bottom="20px";
 el.style.right="20px";
-el.innerHTML='<video id="webcam" autoplay muted></video>';
 }
 
 stage.appendChild(el);
 makeDraggable(el);
 
-layers[type]=el;
-scenes[currentScene].push(type);
-
-renderLayers();
-}
-
-/* SHOW/HIDE PER SCENE */
-function switchScene(id){
-currentScene=id;
-
-Object.keys(layers).forEach(k=>{
-layers[k].classList.add("hidden");
+/* RIGHT CLICK */
+el.addEventListener("contextmenu",(e)=>{
+e.preventDefault();
+selectedLayer=el;
+menu.style.display="block";
+menu.style.left=e.pageX+"px";
+menu.style.top=e.pageY+"px";
+showProps(el);
 });
 
-scenes[id].forEach(k=>{
-if(layers[k]) layers[k].classList.remove("hidden");
-});
-
-renderLayers();
+return el;
 }
 
-/* LAYER LIST UI */
-function renderLayers(){
-layerList.innerHTML="";
-
-Object.keys(layers).forEach(k=>{
-let div=document.createElement("div");
-div.className="layerItem";
-
-div.innerHTML=`
-<span>${k}</span>
-<button onclick="toggleLayer('${k}')">Toggle</button>
+/* PROPERTIES PANEL */
+function showProps(layer){
+document.getElementById("propContent").innerHTML=`
+<b>Type:</b> ${layer.dataset.type}<br><br>
+<button onclick="changeSource('${layer.dataset.type}')">Change Source</button>
 `;
-
-layerList.appendChild(div);
-});
 }
 
-function toggleLayer(name){
-if(!layers[name])return;
+/* CHANGE SOURCE */
+async function changeSource(type){
 
-layers[name].classList.toggle("hidden");
+if(type==="screen"){
+screenStream = await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
+selectedLayer.querySelector("video").srcObject=screenStream;
+}
+
+if(type==="webcam"){
+webcamStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+selectedLayer.querySelector("video").srcObject=webcamStream;
+}
+}
+
+/* CONTEXT ACTIONS */
+function setSource(type){
+changeSource(type);
+menu.style.display="none";
+}
+
+function deleteLayer(){
+if(selectedLayer){
+selectedLayer.remove();
+selectedLayer=null;
+}
+menu.style.display="none";
 }
 
 /* DRAG */
@@ -279,7 +266,7 @@ down=true;
 x=e.clientX - el.offsetLeft;
 y=e.clientY - el.offsetTop;
 el.setPointerCapture(e.pointerId);
-el.style.zIndex=999;
+el.classList.add("selected");
 });
 
 el.addEventListener("pointermove",(e)=>{
@@ -288,21 +275,12 @@ el.style.left=(e.clientX-x)+"px";
 el.style.top=(e.clientY-y)+"px";
 });
 
-el.addEventListener("pointerup",()=>down=false);
+el.addEventListener("pointerup",()=>{
+down=false;
+});
 }
 
-/* SOURCES */
-async function initScreen(){
-screenStream = await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
-document.getElementById("screen").srcObject = screenStream;
-}
-
-async function initWebcam(){
-webcamStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-document.getElementById("webcam").srcObject = webcamStream;
-}
-
-/* PLATFORM AUTOFILL FIX */
+/* PLATFORM FIX */
 document.getElementById("platform").onchange=()=>{
 if(platform.value==="twitch"){
 rtmpUrl.value="rtmp://live.twitch.tv/app/";
@@ -326,46 +304,11 @@ streamKey:streamKey.value
 };
 };
 
-/* STREAM */
-async function start(streaming=false){
-if(!screenStream)return alert("Add screen layer first");
-
-chunks=[];
-
-recorder=new MediaRecorder(screenStream);
-
-recorder.ondataavailable=e=>{
-if(e.data.size>0){
-
-chunks.push(e.data);
-
-if(streaming && ws){
-const r=new FileReader();
-r.onload=()=>{
-ws.send(JSON.stringify({
-type:"video-chunk",
-chunk:r.result.split(",")[1]
-}));
-};
-r.readAsDataURL(e.data);
-}
-}
-};
-
-recorder.start(1000);
-
-if(streaming && ws){
-ws.send(JSON.stringify({type:"start-stream"}));
-}
-}
-
-/* BUTTONS */
-document.getElementById("goLiveBtn").onclick=()=>start(true);
-document.getElementById("stopBtn").onclick=()=>recorder?.stop();
-
-document.getElementById("stopStreamBtn").onclick=()=>{
-ws?.send(JSON.stringify({type:"stop-stream"}));
-recorder?.stop();
+/* CLICK OUTSIDE CLOSE MENU */
+window.onclick=()=>{
+menu.style.display="none";
+selectedLayer?.classList.remove("selected");
+selectedLayer=null;
 };
 
 </script>
