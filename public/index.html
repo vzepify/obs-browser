@@ -58,13 +58,14 @@
 
         /* Main Container */
         .main-container {
-            display: grid;
-            grid-template-columns: 280px 1fr 420px;
-            grid-template-rows: 1fr 240px;
-            height: calc(100vh - 30px);
-            gap: 1px;
-            background: var(--border-color);
-        }
+    display: grid;
+    grid-template-columns: 280px 1fr 420px;
+    grid-template-rows: 1fr 240px;
+    height: calc(100vh - 30px);
+    gap: 1px;
+    background: var(--border-color);
+    overflow: hidden;
+}
 
         /* Left Panel - Scene Preview */
         .left-panel {
@@ -86,10 +87,10 @@
         }
 
         .preview-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 8px;
-        }
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
 
         .preview-item {
             background: var(--bg-control);
@@ -540,8 +541,23 @@
         }
 
         .stream-status.disconnected {
-            background: rgba(239, 68, 68, 0.2);
-            color: var(--danger);
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--danger);
+}
+
+.center-top-panel {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.left-panel,
+.right-panel,
+.bottom-left,
+.bottom-center,
+.bottom-right {
+    overflow-y: auto;
+    min-height: 0;
+}
         }
     </style>
 </head>
