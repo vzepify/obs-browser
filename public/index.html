@@ -3,116 +3,40 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Studio - Live Enabled</title>
+<title>Stream Studio - Fixed Live</title>
 
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 
 <style>
-*{margin:0;padding:0;box-sizing:border-box;}
+body{margin:0;font-family:DM Sans;background:#0a0e1a;color:white;}
+.app{display:grid;grid-template-columns:320px 1fr;height:100vh;}
 
-:root{
---bg-primary:#0a0e1a;
---bg-secondary:#151b2e;
---bg-tertiary:#1e2538;
---accent:#00ff88;
---text-primary:#fff;
---text-secondary:#8b92ab;
---danger:#ff3366;
+.sidebar{background:#151b2e;padding:15px;overflow-y:auto;}
+button,input,select{
+width:100%;padding:10px;margin:5px 0;border:none;border-radius:6px;
+background:#1e2538;color:white;
 }
 
-body{
-font-family:'DM Sans',sans-serif;
-background:var(--bg-primary);
-color:var(--text-primary);
-}
+button{cursor:pointer;}
+#connectBtn{background:#00ff88;color:black;font-weight:bold;}
+#goLiveBtn{background:#9146ff;}
+#stopStreamBtn{background:#ff3366;}
 
-.app-container{
-display:grid;
-grid-template-columns:320px 1fr;
-min-height:100vh;
-}
+.preview{display:flex;justify-content:center;align-items:center;}
+video{width:80%;background:black;border-radius:10px;}
 
-.sidebar{
-background:var(--bg-secondary);
-padding:20px;
-overflow-y:auto;
-}
-
-.logo{
-color:var(--accent);
-margin-bottom:20px;
-font-weight:bold;
-}
-
-.scene-btn{
-width:100%;
-padding:10px;
-margin-bottom:6px;
-background:#222;
-color:white;
-border:none;
-cursor:pointer;
-}
-
-.controls{margin-top:20px;}
-
-.record-btn{
-width:100%;
-padding:12px;
-background:var(--danger);
-border:none;
-color:white;
-margin-bottom:8px;
-cursor:pointer;
-}
-
-.secondary-btn{
-width:100%;
-padding:10px;
-background:#333;
-border:none;
-color:white;
-margin-bottom:6px;
-cursor:pointer;
-}
-
-input,select{
-width:100%;
-padding:8px;
-margin-bottom:6px;
-background:#222;
-color:white;
-border:none;
-}
-
-.preview-area{
-display:flex;
-justify-content:center;
-align-items:center;
-}
-
-video{width:100%;}
-
-.webcam-pip{
-position:absolute;
-bottom:10px;
-right:10px;
-width:200px;
-border:2px solid var(--accent);
-}
-
+.webcam{position:absolute;bottom:20px;right:20px;width:200px;border:2px solid #00ff88;border-radius:10px;}
 </style>
 </head>
 
 <body>
 
-<div class="app-container">
+<div class="app">
 
 <div class="sidebar">
 
-<div class="logo">STREAM.STUDIO</div>
+<h3>STREAM.STUDIO</h3>
 
-<!-- STREAM SETUP -->
 <select id="platform">
 <option value="">Select Platform</option>
 <option value="twitch">Twitch</option>
@@ -120,105 +44,118 @@ border:2px solid var(--accent);
 <option value="custom">Custom</option>
 </select>
 
-<input id="rtmpUrl" placeholder="RTMP URL" style="display:none;">
-<input id="streamKey" placeholder="Stream Key" style="display:none;">
+<input id="rtmpUrl" placeholder="RTMP URL">
+<input id="streamKey" placeholder="Stream Key">
 
 <button id="connectBtn">Connect</button>
 <button id="goLiveBtn">Go Live</button>
-<button id="stopStreamBtn" style="width:100%;padding:10px;margin-top:8px;background:#ff3366;color:white;">
-  Stop Streaming
-</button>
+<button id="stopStreamBtn">Stop Stream</button>
 
-<hr style="margin:10px 0;">
+<hr>
 
-<!-- RECORD CONTROLS -->
-<div class="controls">
-<button id="recordBtn" class="record-btn">Record</button>
-<button id="stopBtn" class="secondary-btn">Stop</button>
+<button id="recordBtn">Record</button>
+<button id="stopBtn">Stop Recording</button>
+
 <div id="downloads"></div>
-</div>
 
 </div>
 
-<div class="preview-area">
-<div style="position:relative;width:80%;">
-<video id="preview" autoplay muted></video>
-<video id="webcam" class="webcam-pip" autoplay muted style="display:none;"></video>
+<div class="preview">
+<div style="position:relative;width:100%;">
+<video id="screen" autoplay muted></video>
+<video id="webcam" class="webcam" autoplay muted style="display:none;"></video>
 </div>
 </div>
 
 </div>
 
 <script>
-let ws;
-let connected=false;
-let recorder;
-let chunks=[];
-let stream;
+let ws = null;
+let connected = false;
+let recorder = null;
+let chunks = [];
+let stream = null;
 
 /* UI */
-const platform=document.getElementById("platform");
-const rtmp=document.getElementById("rtmpUrl");
-const key=document.getElementById("streamKey");
+const platform = document.getElementById("platform");
+const rtmp = document.getElementById("rtmpUrl");
+const key = document.getElementById("streamKey");
 
-/* PLATFORM SELECT */
-platform.onchange=()=>{
-key.style.display="block";
+/* PLATFORM LOGIC */
+platform.onchange = () => {
+if (platform.value === "custom") {
+rtmp.style.display = "block";
+} else {
+rtmp.style.display = "block";
 
-if(platform.value==="custom"){
-rtmp.style.display="block";
-}else{
-rtmp.style.display="none";
-
-if(platform.value==="twitch"){
-rtmp.value="rtmp://live.twitch.tv/app/";
+if (platform.value === "twitch") {
+rtmp.value = "rtmp://live.twitch.tv/app/";
 }
-if(platform.value==="youtube"){
-rtmp.value="rtmp://a.rtmp.youtube.com/live2/";
+if (platform.value === "youtube") {
+rtmp.value = "rtmp://a.rtmp.youtube.com/live2/";
 }
 }
 };
 
 /* CONNECT */
-document.getElementById("connectBtn").onclick=()=>{
+document.getElementById("connectBtn").onclick = () => {
+
 const wsProtocol = location.protocol === "https:" ? "wss" : "ws";
 const wsUrl = `${wsProtocol}://${location.host}`;
+
+console.log("Connecting:", wsUrl);
+
 ws = new WebSocket(wsUrl);
 
-ws.onopen=()=>{
+ws.onopen = () => {
 ws.send(JSON.stringify({
-type:"configure",
-rtmpUrl:rtmp.value,
-streamKey:key.value
+type: "configure",
+rtmpUrl: rtmp.value,
+streamKey: key.value
 }));
 
-connected=true;
-alert("Connected to server");
+connected = true;
+document.getElementById("connectBtn").textContent = "Connected";
 };
 
-ws.onerror=()=>alert("WebSocket failed");
+ws.onclose = () => {
+connected = false;
+document.getElementById("connectBtn").textContent = "Connect";
 };
 
-/* START STREAM / RECORD */
-async function start(streaming=false){
+ws.onerror = () => {
+alert("WebSocket failed");
+};
+};
 
-stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
+/* SCREEN */
+async function getScreen() {
+return await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+}
 
-document.getElementById("preview").srcObject=stream;
+/* START RECORD */
+async function start(streaming = false) {
 
-recorder=new MediaRecorder(stream);
+stream = await getScreen();
 
-recorder.ondataavailable=e=>{
-if(e.data.size>0){
+document.getElementById("screen").srcObject = stream;
+
+chunks = [];
+
+recorder = new MediaRecorder(stream, {
+mimeType: "video/webm;codecs=vp9"
+});
+
+recorder.ondataavailable = (e) => {
+if (e.data.size > 0) {
 chunks.push(e.data);
 
-/* SEND TO SERVER */
-if(streaming && connected){
-const reader=new FileReader();
-reader.onload=()=>{
+if (streaming && ws && ws.readyState === WebSocket.OPEN) {
+const reader = new FileReader();
+reader.onload = () => {
 ws.send(JSON.stringify({
-type:"video-chunk",
-chunk:reader.result.split(",")[1]
+type: "video-chunk",
+chunk: reader.result.split(",")[1]
 }));
 };
 reader.readAsDataURL(e.data);
@@ -226,33 +163,57 @@ reader.readAsDataURL(e.data);
 }
 };
 
-recorder.onstop=()=>{
-const blob=new Blob(chunks);
-const url=URL.createObjectURL(blob);
+recorder.onstop = () => {
+const blob = new Blob(chunks);
+const url = URL.createObjectURL(blob);
+
 document.getElementById("downloads").innerHTML +=
 `<a href="${url}" download>Download</a><br>`;
 };
 
 recorder.start(1000);
 
-/* START RTMP */
-if(streaming && connected){
-ws.send(JSON.stringify({type:"start-stream"}));
+if (streaming && ws && ws.readyState === WebSocket.OPEN) {
+ws.send(JSON.stringify({ type: "start-stream" }));
 }
 }
 
-/* BUTTONS */
-document.getElementById("recordBtn").onclick=()=>start(false);
-
-document.getElementById("goLiveBtn").onclick=()=>{
-if(!connected){alert("Connect first");return;}
+/* GO LIVE */
+document.getElementById("goLiveBtn").onclick = () => {
+if (!ws || ws.readyState !== WebSocket.OPEN) {
+alert("Connect first");
+return;
+}
 start(true);
 };
 
-document.getElementById("stopBtn").onclick=()=>{
+/* STOP STREAM (FIXED) */
+document.getElementById("stopStreamBtn").onclick = () => {
+if (!ws || ws.readyState !== WebSocket.OPEN) {
+alert("Not connected");
+return;
+}
+
+ws.send(JSON.stringify({
+type: "stop-stream"
+}));
+
+if (recorder && recorder.state !== "inactive") {
 recorder.stop();
-if(ws) ws.send(JSON.stringify({type:"stop-stream"}));
+}
+
+connected = false;
+document.getElementById("connectBtn").textContent = "Connect";
 };
+
+/* LOCAL RECORD */
+document.getElementById("recordBtn").onclick = () => start(false);
+
+document.getElementById("stopBtn").onclick = () => {
+if (recorder) recorder.stop();
+if (ws) ws.send(JSON.stringify({ type: "stop-stream" }));
+};
+
 </script>
 
 </body>
