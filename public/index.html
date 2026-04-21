@@ -3,17 +3,39 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Studio - OBS Audio Mixer</title>
+<title>Stream Studio - OBS Clone UI</title>
 
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 
 <style>
-body{margin:0;font-family:DM Sans;background:#0a0e1a;color:white;}
-.app{display:grid;grid-template-columns:320px 1fr;height:100vh;}
+body{
+margin:0;
+font-family:DM Sans;
+background:#0a0e1a;
+color:white;
+}
 
-.sidebar{background:#151b2e;padding:15px;overflow-y:auto;}
+.app{
+display:grid;
+grid-template-columns:340px 1fr;
+height:100vh;
+}
 
-button,input,select{
+/* SIDEBAR */
+.sidebar{
+background:#151b2e;
+padding:16px;
+overflow-y:auto;
+border-right:1px solid #222;
+}
+
+h3{
+margin:5px 0 15px 0;
+color:#00ff88;
+}
+
+/* inputs */
+input,select,button{
 width:100%;
 padding:10px;
 margin:5px 0;
@@ -21,36 +43,76 @@ border:none;
 border-radius:6px;
 background:#1e2538;
 color:white;
+outline:none;
 }
 
-button{cursor:pointer;}
+button{
+cursor:pointer;
+transition:0.2s;
+}
+
+button:hover{
+transform:scale(1.02);
+}
 
 #connectBtn{background:#00ff88;color:black;font-weight:bold;}
 #goLiveBtn{background:#9146ff;}
 #stopStreamBtn{background:#ff3366;}
 
-.preview{display:flex;justify-content:center;align-items:center;}
-video{width:80%;background:black;border-radius:10px;}
+/* source boxes */
+.source-box{
+background:#0f1424;
+padding:10px;
+border-radius:8px;
+margin:10px 0;
+border:1px solid #222;
+}
+
+label{
+font-size:12px;
+opacity:0.8;
+}
+
+/* preview */
+.preview{
+display:flex;
+justify-content:center;
+align-items:center;
+position:relative;
+}
+
+#screen{
+width:90%;
+border-radius:10px;
+background:black;
+}
 
 .webcam{
 position:absolute;
 bottom:20px;
 right:20px;
-width:200px;
+width:180px;
 border:2px solid #00ff88;
 border-radius:10px;
+background:black;
 }
 
-/* 🎛 AUDIO MIXER UI */
+/* audio mixer */
 .mixer-title{
 margin-top:10px;
-font-size:14px;
-opacity:0.8;
+font-size:13px;
+opacity:0.7;
 }
 
 input[type="range"]{
-padding:0;
 height:4px;
+}
+
+/* status */
+.status{
+font-size:12px;
+opacity:0.8;
+margin-top:5px;
 }
 </style>
 </head>
@@ -59,10 +121,27 @@ height:4px;
 
 <div class="app">
 
+<!-- SIDEBAR -->
 <div class="sidebar">
 
 <h3>STREAM.STUDIO</h3>
 
+<!-- SOURCES (BEFORE CONNECT) -->
+<div class="source-box">
+<label>🎬 Screen Source</label>
+<button id="selectScreen">Select Screen</button>
+<div class="status" id="screenStatus">Not selected</div>
+</div>
+
+<div class="source-box">
+<label>📹 Webcam Source</label>
+<button id="selectWebcam">Enable Webcam</button>
+<div class="status" id="camStatus">Not selected</div>
+</div>
+
+<hr>
+
+<!-- STREAM -->
 <select id="platform">
 <option value="">Select Platform</option>
 <option value="twitch">Twitch</option>
@@ -79,13 +158,8 @@ height:4px;
 
 <hr>
 
-<button id="recordBtn">Record</button>
-<button id="stopBtn">Stop Recording</button>
-
-<hr>
-
-<!-- 🎛 AUDIO MIXER -->
-<div class="mixer-title">🎤 Audio Mixer</div>
+<!-- AUDIO MIXER -->
+<div class="mixer-title">🎛 Audio Mixer</div>
 
 <label>Mic</label>
 <input id="micVol" type="range" min="0" max="2" step="0.01" value="1">
@@ -96,135 +170,99 @@ height:4px;
 <label>Master</label>
 <input id="masterVol" type="range" min="0" max="2" step="0.01" value="1">
 
+<hr>
+
+<button id="recordBtn">Record</button>
+<button id="stopBtn">Stop Recording</button>
+
 <div id="downloads"></div>
 
 </div>
 
+<!-- PREVIEW -->
 <div class="preview">
-<div style="position:relative;width:100%;">
+<div style="position:relative;width:100%;display:flex;justify-content:center;">
+
 <video id="screen" autoplay muted></video>
+
 <video id="webcam" class="webcam" autoplay muted style="display:none;"></video>
+
 </div>
 </div>
 
 </div>
 
 <script>
-let ws = null;
-let connected = false;
-let recorder = null;
-let chunks = [];
-let stream = null;
+let ws;
+let connected=false;
+let recorder;
+let chunks=[];
+let screenStream=null;
+let webcamStream=null;
 
-/* =========================
-   AUDIO MIXER (OBS STYLE)
-========================= */
-let audioCtx = new AudioContext();
-
-let micGain = audioCtx.createGain();
-let sysGain = audioCtx.createGain();
-let masterGain = audioCtx.createGain();
-
-async function setupAudio(stream) {
-  const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-  const micSource = audioCtx.createMediaStreamSource(micStream);
-  const sysSource = audioCtx.createMediaStreamSource(stream);
-
-  micSource.connect(micGain);
-  sysSource.connect(sysGain);
-
-  micGain.connect(masterGain);
-  sysGain.connect(masterGain);
-
-  masterGain.connect(audioCtx.destination);
-}
-
-/* SLIDERS */
-document.getElementById("micVol").oninput = e => {
-  micGain.gain.value = e.target.value;
+/* SOURCES */
+document.getElementById("selectScreen").onclick = async () => {
+screenStream = await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
+document.getElementById("screen").srcObject = screenStream;
+document.getElementById("screenStatus").textContent = "Screen selected ✔";
 };
 
-document.getElementById("sysVol").oninput = e => {
-  sysGain.gain.value = e.target.value;
+document.getElementById("selectWebcam").onclick = async () => {
+webcamStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+document.getElementById("webcam").srcObject = webcamStream;
+document.getElementById("webcam").style.display = "block";
+document.getElementById("camStatus").textContent = "Webcam enabled ✔";
 };
-
-document.getElementById("masterVol").oninput = e => {
-  masterGain.gain.value = e.target.value;
-};
-
-/* UI */
-const platform = document.getElementById("platform");
-const rtmp = document.getElementById("rtmpUrl");
-const key = document.getElementById("streamKey");
 
 /* PLATFORM */
-platform.onchange = () => {
-if (platform.value === "twitch") {
-rtmp.value = "rtmp://live.twitch.tv/app/";
+document.getElementById("platform").onchange = () => {
+if(platform.value==="twitch"){
+rtmp.value="rtmp://live.twitch.tv/app/";
 }
-if (platform.value === "youtube") {
-rtmp.value = "rtmp://a.rtmp.youtube.com/live2/";
+if(platform.value==="youtube"){
+rtmp.value="rtmp://a.rtmp.youtube.com/live2/";
 }
 };
 
 /* CONNECT */
 document.getElementById("connectBtn").onclick = () => {
 
-const wsProtocol = location.protocol === "https:" ? "wss" : "ws";
-const wsUrl = `${wsProtocol}://${location.host}`;
-
-ws = new WebSocket(wsUrl);
+const proto = location.protocol==="https:"?"wss":"ws";
+ws = new WebSocket(`${proto}://${location.host}`);
 
 ws.onopen = () => {
 ws.send(JSON.stringify({
-type: "configure",
-rtmpUrl: rtmp.value,
-streamKey: key.value
+type:"configure",
+rtmpUrl:rtmp.value,
+streamKey:streamKey.value
 }));
 
-connected = true;
-document.getElementById("connectBtn").textContent = "Connected";
+connected=true;
+document.getElementById("connectBtn").textContent="Connected";
 };
 
-ws.onclose = () => connected = false;
-ws.onerror = () => alert("WebSocket failed");
+ws.onclose=()=>connected=false;
 };
-
-/* SCREEN */
-async function getScreen() {
-return await navigator.mediaDevices.getDisplayMedia({
-video: true,
-audio: true
-});
-}
 
 /* START STREAM */
-async function start(streaming = false) {
+async function start(streaming=false){
 
-stream = await getScreen();
+if(!screenStream) return alert("Select screen first");
 
-document.getElementById("screen").srcObject = stream;
+chunks=[];
 
-/* 🎛 setup audio mixer */
-await setupAudio(stream);
+recorder=new MediaRecorder(screenStream,{mimeType:"video/webm;codecs=vp9"});
 
-chunks = [];
-
-recorder = new MediaRecorder(stream, {
-mimeType: "video/webm;codecs=vp9"
-});
-
-recorder.ondataavailable = (e) => {
-if (e.data.size > 0) {
+recorder.ondataavailable=(e)=>{
+if(e.data.size>0){
 chunks.push(e.data);
 
-if (streaming && ws && ws.readyState === WebSocket.OPEN) {
-const reader = new FileReader();
-reader.onload = () => {
+if(streaming && ws){
+const reader=new FileReader();
+reader.onload=()=>{
 ws.send(JSON.stringify({
-type: "video-chunk",
-chunk: reader.result.split(",")[1]
+type:"video-chunk",
+chunk:reader.result.split(",")[1]
 }));
 };
 reader.readAsDataURL(e.data);
@@ -232,53 +270,36 @@ reader.readAsDataURL(e.data);
 }
 };
 
-recorder.onstop = () => {
-const blob = new Blob(chunks);
-const url = URL.createObjectURL(blob);
-
-document.getElementById("downloads").innerHTML +=
-`<a href="${url}" download>Download</a><br>`;
+recorder.onstop=()=>{
+const blob=new Blob(chunks);
+const url=URL.createObjectURL(blob);
+document.getElementById("downloads").innerHTML+=`<a href="${url}" download>Download</a><br>`;
 };
 
 recorder.start(1000);
 
-if (streaming && ws && ws.readyState === WebSocket.OPEN) {
-ws.send(JSON.stringify({ type: "start-stream" }));
+if(streaming && ws){
+ws.send(JSON.stringify({type:"start-stream"}));
 }
 }
 
-/* GO LIVE */
-document.getElementById("goLiveBtn").onclick = () => {
-if (!ws || ws.readyState !== WebSocket.OPEN) {
-alert("Connect first");
-return;
-}
+/* BUTTONS */
+document.getElementById("goLiveBtn").onclick=()=>{
+if(!connected)return alert("Connect first");
 start(true);
 };
 
-/* STOP STREAM */
-document.getElementById("stopStreamBtn").onclick = () => {
-if (!ws || ws.readyState !== WebSocket.OPEN) {
-alert("Not connected");
-return;
-}
+document.getElementById("recordBtn").onclick=()=>start(false);
 
-ws.send(JSON.stringify({ type: "stop-stream" }));
-
-if (recorder && recorder.state !== "inactive") {
-recorder.stop();
-}
-
-connected = false;
-document.getElementById("connectBtn").textContent = "Connect";
+document.getElementById("stopBtn").onclick=()=>{
+if(recorder)recorder.stop();
+if(ws)ws.send(JSON.stringify({type:"stop-stream"}));
 };
 
-/* RECORD */
-document.getElementById("recordBtn").onclick = () => start(false);
-
-document.getElementById("stopBtn").onclick = () => {
-if (recorder) recorder.stop();
-if (ws) ws.send(JSON.stringify({ type: "stop-stream" }));
+document.getElementById("stopStreamBtn").onclick=()=>{
+if(ws)ws.send(JSON.stringify({type:"stop-stream"}));
+if(recorder)recorder.stop();
+connected=false;
 };
 
 </script>
