@@ -3,72 +3,54 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>stream.studio</title>
+<title>Stream Studio - OBS Audio Mixer</title>
+
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 
 <style>
-body {
-margin: 0;
-font-family: sans-serif;
-background: #0a0e1a;
-color: white;
-overflow: hidden;
+body{margin:0;font-family:DM Sans;background:#0a0e1a;color:white;}
+.app{display:grid;grid-template-columns:320px 1fr;height:100vh;}
+
+.sidebar{background:#151b2e;padding:15px;overflow-y:auto;}
+
+button,input,select{
+width:100%;
+padding:10px;
+margin:5px 0;
+border:none;
+border-radius:6px;
+background:#1e2538;
+color:white;
 }
 
-.app {
-display: grid;
-grid-template-columns: 280px 1fr;
-height: 100vh;
+button{cursor:pointer;}
+
+#connectBtn{background:#00ff88;color:black;font-weight:bold;}
+#goLiveBtn{background:#9146ff;}
+#stopStreamBtn{background:#ff3366;}
+
+.preview{display:flex;justify-content:center;align-items:center;}
+video{width:80%;background:black;border-radius:10px;}
+
+.webcam{
+position:absolute;
+bottom:20px;
+right:20px;
+width:200px;
+border:2px solid #00ff88;
+border-radius:10px;
 }
 
-/* SIDEBAR */
-.sidebar {
-background: #151b2e;
-padding: 10px;
-overflow-y: auto;
+/* 🎛 AUDIO MIXER UI */
+.mixer-title{
+margin-top:10px;
+font-size:14px;
+opacity:0.8;
 }
 
-button {
-width: 100%;
-padding: 10px;
-margin: 5px 0;
-background: #222;
-border: none;
-color: white;
-cursor: pointer;
-border-radius: 6px;
-}
-
-button:hover {
-background: #333;
-}
-
-/* STAGE */
-.stage-wrap {
-display: flex;
-align-items: center;
-justify-content: center;
-background: black;
-position: relative;
-}
-
-canvas {
-width: 960px;
-height: 540px;
-background: #000;
-border: 2px solid #00ff88;
-}
-
-/* LAYER PANEL */
-.layer {
-background: #1e2538;
-padding: 5px;
-margin: 5px 0;
-cursor: grab;
-border-radius: 5px;
-}
-
-.layer.active {
-border: 2px solid #00ff88;
+input[type="range"]{
+padding:0;
+height:4px;
 }
 </style>
 </head>
@@ -77,167 +59,228 @@ border: 2px solid #00ff88;
 
 <div class="app">
 
-<!-- SIDEBAR -->
 <div class="sidebar">
 
-<h3>OBS CLONE</h3>
+<h3>STREAM.STUDIO</h3>
 
-<button onclick="addScreen()">Add Screen</button>
-<button onclick="addText()">Add Text</button>
-<button onclick="addImage()">Add Image</button>
+<select id="platform">
+<option value="">Select Platform</option>
+<option value="twitch">Twitch</option>
+<option value="youtube">YouTube</option>
+<option value="custom">Custom</option>
+</select>
 
-<h4>Layers</h4>
-<div id="layers"></div>
+<input id="rtmpUrl" placeholder="RTMP URL">
+<input id="streamKey" placeholder="Stream Key">
+
+<button id="connectBtn">Connect</button>
+<button id="goLiveBtn">Go Live</button>
+<button id="stopStreamBtn">Stop Stream</button>
+
+<hr>
+
+<button id="recordBtn">Record</button>
+<button id="stopBtn">Stop Recording</button>
+
+<hr>
+
+<!-- 🎛 AUDIO MIXER -->
+<div class="mixer-title">🎤 Audio Mixer</div>
+
+<label>Mic</label>
+<input id="micVol" type="range" min="0" max="2" step="0.01" value="1">
+
+<label>System</label>
+<input id="sysVol" type="range" min="0" max="2" step="0.01" value="1">
+
+<label>Master</label>
+<input id="masterVol" type="range" min="0" max="2" step="0.01" value="1">
+
+<div id="downloads"></div>
 
 </div>
 
-<!-- STAGE -->
-<div class="stage-wrap">
-<canvas id="c"></canvas>
+<div class="preview">
+<div style="position:relative;width:100%;">
+<video id="screen" autoplay muted></video>
+<video id="webcam" class="webcam" autoplay muted style="display:none;"></video>
+</div>
 </div>
 
 </div>
 
 <script>
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
+let ws = null;
+let connected = false;
+let recorder = null;
+let chunks = [];
+let stream = null;
 
-canvas.width = 960;
-canvas.height = 540;
+/* =========================
+   AUDIO MIXER (OBS STYLE)
+========================= */
+let audioCtx = new AudioContext();
 
-let layers = [];
-let selected = null;
+let micGain = audioCtx.createGain();
+let sysGain = audioCtx.createGain();
+let masterGain = audioCtx.createGain();
 
-/* SCREEN CAPTURE */
-let screenVideo = document.createElement("video");
-screenVideo.autoplay = true;
-screenVideo.muted = true;
+async function setupAudio(stream) {
+  const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-/* ADD SCREEN */
-async function addScreen() {
-const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-screenVideo.srcObject = stream;
+  const micSource = audioCtx.createMediaStreamSource(micStream);
+  const sysSource = audioCtx.createMediaStreamSource(stream);
 
-layers.push({
-type: "screen",
-x: 0,
-y: 0,
-w: 960,
-h: 540
-});
+  micSource.connect(micGain);
+  sysSource.connect(sysGain);
 
-renderUI();
+  micGain.connect(masterGain);
+  sysGain.connect(masterGain);
+
+  masterGain.connect(audioCtx.destination);
 }
 
-/* ADD TEXT */
-function addText() {
-layers.push({
-type: "text",
-text: "New Text",
-x: 100,
-y: 100,
-size: 30
-});
-
-renderUI();
-}
-
-/* ADD IMAGE */
-function addImage() {
-const url = prompt("Image URL");
-if (!url) return;
-
-const img = new Image();
-img.src = url;
-
-layers.push({
-type: "image",
-img,
-x: 150,
-y: 150,
-w: 200,
-h: 200
-});
-
-renderUI();
-}
-
-/* DRAW LOOP */
-function draw() {
-ctx.clearRect(0,0,canvas.width,canvas.height);
-
-layers.forEach(l => {
-
-if (l.type === "screen" && screenVideo.srcObject) {
-ctx.drawImage(screenVideo, l.x, l.y, l.w, l.h);
-}
-
-if (l.type === "text") {
-ctx.fillStyle = "white";
-ctx.font = l.size + "px sans-serif";
-ctx.fillText(l.text, l.x, l.y);
-}
-
-if (l.type === "image") {
-ctx.drawImage(l.img, l.x, l.y, l.w, l.h);
-}
-
-});
-
-requestAnimationFrame(draw);
-}
-
-draw();
-
-/* DRAG SYSTEM */
-let drag = null;
-
-canvas.onmousedown = (e) => {
-const rect = canvas.getBoundingClientRect();
-const mx = e.clientX - rect.left;
-const my = e.clientY - rect.top;
-
-layers.forEach(l => {
-if (mx > l.x && mx < l.x + (l.w || 100) &&
-my > l.y && my < l.y + (l.h || 50)) {
-drag = { layer: l, dx: mx - l.x, dy: my - l.y };
-selected = l;
-renderUI();
-}
-});
+/* SLIDERS */
+document.getElementById("micVol").oninput = e => {
+  micGain.gain.value = e.target.value;
 };
 
-canvas.onmousemove = (e) => {
-if (!drag) return;
-
-const rect = canvas.getBoundingClientRect();
-const mx = e.clientX - rect.left;
-const my = e.clientY - rect.top;
-
-drag.layer.x = mx - drag.dx;
-drag.layer.y = my - drag.dy;
+document.getElementById("sysVol").oninput = e => {
+  sysGain.gain.value = e.target.value;
 };
 
-canvas.onmouseup = () => drag = null;
-
-/* UI PANEL */
-function renderUI() {
-const el = document.getElementById("layers");
-el.innerHTML = "";
-
-layers.forEach((l,i) => {
-const div = document.createElement("div");
-div.className = "layer" + (selected === l ? " active" : "");
-div.textContent = l.type + " #" + i;
-
-div.onclick = () => {
-selected = l;
-renderUI();
+document.getElementById("masterVol").oninput = e => {
+  masterGain.gain.value = e.target.value;
 };
 
-el.appendChild(div);
+/* UI */
+const platform = document.getElementById("platform");
+const rtmp = document.getElementById("rtmpUrl");
+const key = document.getElementById("streamKey");
+
+/* PLATFORM */
+platform.onchange = () => {
+if (platform.value === "twitch") {
+rtmp.value = "rtmp://live.twitch.tv/app/";
+}
+if (platform.value === "youtube") {
+rtmp.value = "rtmp://a.rtmp.youtube.com/live2/";
+}
+};
+
+/* CONNECT */
+document.getElementById("connectBtn").onclick = () => {
+
+const wsProtocol = location.protocol === "https:" ? "wss" : "ws";
+const wsUrl = `${wsProtocol}://${location.host}`;
+
+ws = new WebSocket(wsUrl);
+
+ws.onopen = () => {
+ws.send(JSON.stringify({
+type: "configure",
+rtmpUrl: rtmp.value,
+streamKey: key.value
+}));
+
+connected = true;
+document.getElementById("connectBtn").textContent = "Connected";
+};
+
+ws.onclose = () => connected = false;
+ws.onerror = () => alert("WebSocket failed");
+};
+
+/* SCREEN */
+async function getScreen() {
+return await navigator.mediaDevices.getDisplayMedia({
+video: true,
+audio: true
 });
 }
+
+/* START STREAM */
+async function start(streaming = false) {
+
+stream = await getScreen();
+
+document.getElementById("screen").srcObject = stream;
+
+/* 🎛 setup audio mixer */
+await setupAudio(stream);
+
+chunks = [];
+
+recorder = new MediaRecorder(stream, {
+mimeType: "video/webm;codecs=vp9"
+});
+
+recorder.ondataavailable = (e) => {
+if (e.data.size > 0) {
+chunks.push(e.data);
+
+if (streaming && ws && ws.readyState === WebSocket.OPEN) {
+const reader = new FileReader();
+reader.onload = () => {
+ws.send(JSON.stringify({
+type: "video-chunk",
+chunk: reader.result.split(",")[1]
+}));
+};
+reader.readAsDataURL(e.data);
+}
+}
+};
+
+recorder.onstop = () => {
+const blob = new Blob(chunks);
+const url = URL.createObjectURL(blob);
+
+document.getElementById("downloads").innerHTML +=
+`<a href="${url}" download>Download</a><br>`;
+};
+
+recorder.start(1000);
+
+if (streaming && ws && ws.readyState === WebSocket.OPEN) {
+ws.send(JSON.stringify({ type: "start-stream" }));
+}
+}
+
+/* GO LIVE */
+document.getElementById("goLiveBtn").onclick = () => {
+if (!ws || ws.readyState !== WebSocket.OPEN) {
+alert("Connect first");
+return;
+}
+start(true);
+};
+
+/* STOP STREAM */
+document.getElementById("stopStreamBtn").onclick = () => {
+if (!ws || ws.readyState !== WebSocket.OPEN) {
+alert("Not connected");
+return;
+}
+
+ws.send(JSON.stringify({ type: "stop-stream" }));
+
+if (recorder && recorder.state !== "inactive") {
+recorder.stop();
+}
+
+connected = false;
+document.getElementById("connectBtn").textContent = "Connect";
+};
+
+/* RECORD */
+document.getElementById("recordBtn").onclick = () => start(false);
+
+document.getElementById("stopBtn").onclick = () => {
+if (recorder) recorder.stop();
+if (ws) ws.send(JSON.stringify({ type: "stop-stream" }));
+};
+
 </script>
 
 </body>
