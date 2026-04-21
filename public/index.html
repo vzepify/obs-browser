@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Studio - Fixed</title>
+<title>Stream Studio - Live Enabled</title>
 
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 
@@ -18,14 +18,12 @@
 --text-primary:#fff;
 --text-secondary:#8b92ab;
 --danger:#ff3366;
---warning:#ffaa00;
 }
 
 body{
 font-family:'DM Sans',sans-serif;
 background:var(--bg-primary);
 color:var(--text-primary);
-min-height:100vh;
 }
 
 .app-container{
@@ -36,112 +34,73 @@ min-height:100vh;
 
 .sidebar{
 background:var(--bg-secondary);
-border-right:1px solid rgba(255,255,255,0.1);
-display:flex;
-flex-direction:column;
-padding:24px;
+padding:20px;
 overflow-y:auto;
 }
 
 .logo{
-font-family:'Space Mono',monospace;
-font-size:22px;
-margin-bottom:30px;
 color:var(--accent);
-}
-
-.section-title{
-font-size:12px;
-color:var(--text-secondary);
-margin-bottom:10px;
+margin-bottom:20px;
+font-weight:bold;
 }
 
 .scene-btn{
 width:100%;
-padding:14px;
-background:var(--bg-tertiary);
-border:none;
-border-radius:8px;
-margin-bottom:8px;
-cursor:pointer;
+padding:10px;
+margin-bottom:6px;
+background:#222;
 color:white;
+border:none;
+cursor:pointer;
 }
 
-.scene-btn.active{
-border:2px solid var(--accent);
-}
-
-.controls{margin-top:auto;}
+.controls{margin-top:20px;}
 
 .record-btn{
 width:100%;
-padding:16px;
+padding:12px;
 background:var(--danger);
 border:none;
-border-radius:10px;
 color:white;
-font-weight:bold;
+margin-bottom:8px;
 cursor:pointer;
-margin-bottom:10px;
 }
 
 .secondary-btn{
 width:100%;
-padding:12px;
-background:var(--bg-tertiary);
+padding:10px;
+background:#333;
 border:none;
-border-radius:8px;
 color:white;
+margin-bottom:6px;
 cursor:pointer;
-margin-bottom:8px;
+}
+
+input,select{
+width:100%;
+padding:8px;
+margin-bottom:6px;
+background:#222;
+color:white;
+border:none;
 }
 
 .preview-area{
 display:flex;
 justify-content:center;
 align-items:center;
-padding:20px;
 }
 
-.preview-container{
-width:100%;
-max-width:1000px;
-aspect-ratio:16/9;
-background:black;
-border-radius:12px;
-position:relative;
-overflow:hidden;
-}
-
-video{
-width:100%;
-height:100%;
-object-fit:contain;
-}
+video{width:100%;}
 
 .webcam-pip{
 position:absolute;
-bottom:15px;
-right:15px;
+bottom:10px;
+right:10px;
 width:200px;
 border:2px solid var(--accent);
-border-radius:10px;
-overflow:hidden;
 }
 
-.placeholder{
-display:flex;
-justify-content:center;
-align-items:center;
-height:100%;
-color:var(--text-secondary);
-}
-
-.status{
-margin-top:10px;
-font-family:'Space Mono';
-text-align:center;
-}
 </style>
 </head>
 
@@ -153,157 +112,142 @@ text-align:center;
 
 <div class="logo">STREAM.STUDIO</div>
 
-<div class="section-title">Scene</div>
+<!-- STREAM SETUP -->
+<select id="platform">
+<option value="">Select Platform</option>
+<option value="twitch">Twitch</option>
+<option value="youtube">YouTube</option>
+<option value="custom">Custom</option>
+</select>
 
-<button class="scene-btn active" data-scene="screen-webcam">Screen + Webcam</button>
-<button class="scene-btn" data-scene="screen-only">Screen Only</button>
-<button class="scene-btn" data-scene="webcam-only">Webcam Only</button>
+<input id="rtmpUrl" placeholder="RTMP URL" style="display:none;">
+<input id="streamKey" placeholder="Stream Key" style="display:none;">
 
+<button id="connectBtn">Connect</button>
+<button id="goLiveBtn">Go Live</button>
+
+<hr style="margin:10px 0;">
+
+<!-- RECORD CONTROLS -->
 <div class="controls">
-<button id="recordBtn" class="record-btn">Start Recording</button>
-<button id="pauseBtn" class="secondary-btn" disabled>Pause</button>
-<button id="stopBtn" class="secondary-btn" disabled>Stop</button>
-
-<div id="status" class="status">00:00</div>
+<button id="recordBtn" class="record-btn">Record</button>
+<button id="stopBtn" class="secondary-btn">Stop</button>
 <div id="downloads"></div>
 </div>
 
 </div>
 
 <div class="preview-area">
-<div class="preview-container">
-
-<div id="placeholder" class="placeholder">Click record to start</div>
-
-<video id="screenPreview" autoplay muted style="display:none;"></video>
-
-<div id="webcamPip" class="webcam-pip" style="display:none;">
-<video id="webcamPreview" autoplay muted></video>
-</div>
-
+<div style="position:relative;width:80%;">
+<video id="preview" autoplay muted></video>
+<video id="webcam" class="webcam-pip" autoplay muted style="display:none;"></video>
 </div>
 </div>
 
 </div>
 
 <script>
-let screenStream=null;
-let webcamStream=null;
-let recorder=null;
+let ws;
+let connected=false;
+let recorder;
 let chunks=[];
-let scene="screen-webcam";
-let startTime=0;
-let timer;
+let stream;
 
-const screenPreview=document.getElementById("screenPreview");
-const webcamPreview=document.getElementById("webcamPreview");
-const webcamPip=document.getElementById("webcamPip");
-const placeholder=document.getElementById("placeholder");
+/* UI */
+const platform=document.getElementById("platform");
+const rtmp=document.getElementById("rtmpUrl");
+const key=document.getElementById("streamKey");
 
-const recordBtn=document.getElementById("recordBtn");
-const pauseBtn=document.getElementById("pauseBtn");
-const stopBtn=document.getElementById("stopBtn");
-const status=document.getElementById("status");
-const downloads=document.getElementById("downloads");
+/* PLATFORM SELECT */
+platform.onchange=()=>{
+key.style.display="block";
 
-/* Scene select */
-document.querySelectorAll(".scene-btn").forEach(btn=>{
-btn.onclick=()=>{ 
-document.querySelectorAll(".scene-btn").forEach(b=>b.classList.remove("active"));
-btn.classList.add("active");
-scene=btn.dataset.scene;
+if(platform.value==="custom"){
+rtmp.style.display="block";
+}else{
+rtmp.style.display="none";
+
+if(platform.value==="twitch"){
+rtmp.value="rtmp://live.twitch.tv/app/";
+}
+if(platform.value==="youtube"){
+rtmp.value="rtmp://a.rtmp.youtube.com/live2/";
+}
+}
 };
-});
 
-/* Streams */
-async function getScreen(){
-return await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
-}
+/* CONNECT */
+document.getElementById("connectBtn").onclick=()=>{
+ws=new WebSocket(`ws://${location.host}`);
 
-async function getWebcam(){
-return await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-}
+ws.onopen=()=>{
+ws.send(JSON.stringify({
+type:"configure",
+rtmpUrl:rtmp.value,
+streamKey:key.value
+}));
 
-/* Start */
-recordBtn.onclick=async()=>{
-chunks=[];
+connected=true;
+alert("Connected to server");
+};
 
-if(scene.includes("screen")){
-screenStream=await getScreen();
-screenPreview.srcObject=screenStream;
-screenPreview.style.display="block";
-placeholder.style.display="none";
-}
+ws.onerror=()=>alert("WebSocket failed");
+};
 
-if(scene.includes("webcam")){
-webcamStream=await getWebcam();
-webcamPreview.srcObject=webcamStream;
-webcamPip.style.display="block";
+/* START STREAM / RECORD */
+async function start(streaming=false){
 
-if(scene==="webcam-only"){
-screenPreview.srcObject=webcamStream;
-}
-}
+stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
 
-let stream = screenStream || webcamStream;
+document.getElementById("preview").srcObject=stream;
 
-let options={mimeType:"video/webm"};
-if(MediaRecorder.isTypeSupported("video/webm;codecs=vp9")){
-options.mimeType="video/webm;codecs=vp9";
-}
-
-recorder=new MediaRecorder(stream,options);
+recorder=new MediaRecorder(stream);
 
 recorder.ondataavailable=e=>{
-if(e.data.size>0)chunks.push(e.data);
+if(e.data.size>0){
+chunks.push(e.data);
+
+/* SEND TO SERVER */
+if(streaming && connected){
+const reader=new FileReader();
+reader.onload=()=>{
+ws.send(JSON.stringify({
+type:"video-chunk",
+chunk:reader.result.split(",")[1]
+}));
+};
+reader.readAsDataURL(e.data);
+}
+}
 };
 
 recorder.onstop=()=>{
-let blob=new Blob(chunks);
-let url=URL.createObjectURL(blob);
-downloads.innerHTML += `<a href="${url}" download="recording.webm">Download</a><br>`;
+const blob=new Blob(chunks);
+const url=URL.createObjectURL(blob);
+document.getElementById("downloads").innerHTML +=
+`<a href="${url}" download>Download</a><br>`;
 };
 
-recorder.start();
+recorder.start(1000);
 
-recordBtn.disabled=true;
-pauseBtn.disabled=false;
-stopBtn.disabled=false;
+/* START RTMP */
+if(streaming && connected){
+ws.send(JSON.stringify({type:"start-stream"}));
+}
+}
 
-startTime=Date.now();
-timer=setInterval(updateTimer,1000);
+/* BUTTONS */
+document.getElementById("recordBtn").onclick=()=>start(false);
+
+document.getElementById("goLiveBtn").onclick=()=>{
+if(!connected){alert("Connect first");return;}
+start(true);
 };
 
-/* Stop */
-stopBtn.onclick=()=>{
+document.getElementById("stopBtn").onclick=()=>{
 recorder.stop();
-clearInterval(timer);
-
-recordBtn.disabled=false;
-pauseBtn.disabled=true;
-stopBtn.disabled=true;
+if(ws) ws.send(JSON.stringify({type:"stop-stream"}));
 };
-
-/* Pause */
-pauseBtn.onclick=()=>{
-if(recorder.state==="recording"){
-recorder.pause();
-pauseBtn.textContent="Resume";
-clearInterval(timer);
-}else{
-recorder.resume();
-pauseBtn.textContent="Pause";
-startTime=Date.now();
-timer=setInterval(updateTimer,1000);
-}
-};
-
-function updateTimer(){
-let t=Math.floor((Date.now()-startTime)/1000);
-let m=String(Math.floor(t/60)).padStart(2,"0");
-let s=String(t%60).padStart(2,"0");
-status.textContent=`${m}:${s}`;
-}
 </script>
 
 </body>
