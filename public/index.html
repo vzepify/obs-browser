@@ -27,12 +27,23 @@
             --warning: #f59e0b;
         }
 
-        body {
+        html, body {
+    height: 100%;
+    margin: 0;
+}
+
+body {
     font-family: 'Inter', sans-serif;
     background: var(--bg-darker);
     color: var(--text-primary);
+
+    /* safer fullscreen behavior */
+    min-height: 100vh;
     height: 100vh;
-    overflow: hidden; /* keep app locked fullscreen */
+
+    /* prevents scrollbars, but keeps layout stable */
+    overflow: hidden;
+}
 }
 
         /* Top Menu Bar */
